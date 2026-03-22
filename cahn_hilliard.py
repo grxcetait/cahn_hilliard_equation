@@ -12,8 +12,32 @@ import os
 import argparse
 
 class CahnHilliard(object):
+    """
+    A class that implements the Cahn-Hilliard equation for phase separation in
+    a physical system (eg. oil-water mixtures).
+    """
 
     def __init__(self, phi, l, dx, dt):
+        """
+        Initialise the Cahn-Hilliard system
+
+        Parameters
+        ----------
+        phi : float
+            Mean initial composition. The field is seeded with uniform
+            random noise in the range [phi - 0.1, phi + 0.1].
+        l : int
+            Side length of the square lattice.
+        dx : float
+            Spatial step size.
+        dt : float
+            Time step size.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define parameters
         self.l = l
@@ -21,14 +45,40 @@ class CahnHilliard(object):
         self.dt = dt
         self.phi_value = phi
         self.phi = self.init_phi()
-        #self.mu = np.zeros((self.l, self.l))
+        self.mu = np.zeros((self.l, self.l))
         self.calculate_mu()
         
     def init_phi(self):
+        """
+        Initialise the field with small random perturbations where the values
+        are drawn from a uniform distribution around the inputted "phi_value"
+        with some small random noise.
+
+        Returns
+        -------
+        np.ndarray of shape (l, l)
+            Randomly initialised composition field.
+
+        """
         
         return np.random.uniform(self.phi_value - 0.1, self.phi_value + 0.1, size = (self.l, self.l))
         
     def laplacian(self, array):
+        """
+        Compute the discrete unnormalised Laplacian of a 2D array with periodic 
+        boundary conditions.
+
+        Parameters
+        ----------
+        array : np.ndarray of shape (l, l)
+            Input scalar field.
+ 
+        Returns
+        -------
+        np.ndarray of shape (l, l)
+            Discrete Laplacian (unnormalised by dx²).
+
+        """
         
         laplacian = np.roll(array, 1, axis = 0) + np.roll(array, 1, axis = 1) + \
             np.roll(array, -1, axis = 0) + np.roll(array, -1, axis = 1) - 4 * array
@@ -36,16 +86,41 @@ class CahnHilliard(object):
         return laplacian
         
     def calculate_mu(self):
+        """
+        Compute the chemical potential field from the current composition.
+
+        Returns
+        -------
+        None.
+
+        """
         
         self.mu = - self.phi * (1 - self.phi**2) - self.laplacian(self.phi) / self.dx**2
             
     def calculate_phi(self):
+        """
+        Advance the composition field by one time steps.
+
+        Returns
+        -------
+        None.
+
+        """
         
         self.calculate_mu()
         
         self.phi = self.phi + self.dt * self.laplacian(self.mu) / self.dx**2
         
     def calculate_free_energy_density(self):
+        """
+        Compute the free energy density across the lattice.
+
+        Returns
+        -------
+        np.ndarray of shape (l, l)
+            Free energy density at each grid point.
+
+        """
         
         grad_x = (np.roll(self.phi, -1, axis=0) - np.roll(self.phi, 1, axis=0)) / (2 * self.dx)
         grad_y = (np.roll(self.phi, -1, axis=1) - np.roll(self.phi, 1, axis=1)) / (2 * self.dx)
@@ -55,19 +130,52 @@ class CahnHilliard(object):
         
     
 class Simulation(object):
+    """
+    A class to handle the execution, measurement, and visualisation 
+    of the Cahn-Hilliard simulation.
+    """
     
     def __init__(self, phi, l, dx, dt):
+        """
+        Initialise simulation parameters
+
+        Parameters
+        ----------
+        phi : float
+            Mean initial composition (order parameter).
+        l : int
+            Side length of the square lattice (l x l grid points).
+        dx : float
+            Spatial step size.
+        dt : float
+            Time step size.
+
+        Returns
+        -------
+        None.
+
+        """
         
-        # Define parameters
         # Define parameters
         self.l = l
         self.dx = dx
         self.dt = dt
         self.phi = phi
-        #self.mu = np.zeros((self.l, self.l))
-        #self.calculate_mu()
         
     def animate(self, steps):
+        """
+        Run and display an animation of the Cahn-Hilliard simulation.
+
+        Parameters
+        ----------
+        steps : int
+            Total number of time steps to simulate.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Initialise the lattice using the CahnHilliard class
         ch = CahnHilliard(self.phi, self.l, self.dx, self.dt)
@@ -100,6 +208,21 @@ class Simulation(object):
         plt.show()
         
     def measurements(self, filename, steps):
+        """
+        Run the simulation and record the mean free energy density over time.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the output data file (e.g. ``"ch_data.txt"``).
+        steps : int
+            Total number of time steps to simulate.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -143,6 +266,19 @@ class Simulation(object):
                 f.write(f"{free_energy_density[i]},{time[i]}\n")
                 
     def plot_measurements(self, filename):
+        """
+        Generate and save a plot of the mean free energy density over time data.
+
+        Parameters
+        ----------
+        filename : str
+            The data file to read from.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
