@@ -14,20 +14,77 @@ import scipy
 import multiprocessing as mp
 
 def simulate_single_omega(l, tolerance, omega):
+    """
+    Run a single SOR simulation to convergence for a given relaxation parameter.
+
+    Parameters
+    ----------
+    l : int
+        Side length of the cubic lattice (l × l × l grid points).
+    tolerance : float
+        Convergence threshold; iteration stops when ``max|Δφ| < tolerance``.
+    omega : float
+        SOR relaxation parameter (1 ≤ ω < 2).
+
+    Returns
+    -------
+    omega : float
+        The relaxation parameter that was used.
+    t : int
+        Number of sweeps required to reach convergence (capped at 10 000).
+
+    """
+    
+    # Initialise the Poisson class
     poisson = Poisson(l, tolerance, omega, init="Monopole")
+    
+    # Set time to zero
     t = 0
+    
+    # Initialise the error to be large
     error = 100.0
+    
+    # Continue to update phi until the error is smaller than the tolerance
     while error > tolerance:
+        
         distance = poisson.sor()
         error = np.max(distance)
         t += 1
+        
+        # To prevent infinite loops
         if t > 10000:
             break
+        
     return omega, t
 
 class Poisson(object):
+    """
+    A class that implements the non-dimensionised 3D Poisson equation on a cubic 
+    lattice.
+    """
 
     def __init__(self, l, tolerance, omega, init):
+        """
+        Initialise the Poisson solver.
+
+        Parameters
+        ----------
+        l : int
+            Side length of the cubic lattice.
+        tolerance : float
+            Convergence threshold.
+        omega : float
+            SOR relaxation parameter.
+        init : {"Monopole", "Wire"}
+            Charge distribution to use:
+            - "Monopole" — single unit charge at the lattice centre.
+            - "Wire" — line of unit charges along the central z-axis.
+
+        Returns
+        -------
+        None.
+
+        """
 
         # Define parameters
         self.l = l
@@ -44,6 +101,20 @@ class Poisson(object):
             self.rho = self.init_rho_wire()
 
     def boundary_conditions(self, phi):
+        """
+        Enforce Dirichlet (zero) boundary conditions on all six faces.
+
+        Parameters
+        ----------
+        phi : np.ndarray of shape (l, l, l)
+            Potential field to modify in-place.
+ 
+        Returns
+        -------
+        np.ndarray of shape (l, l, l)
+            The same array with boundary values set to zero.
+
+        """
 
         # Set boundaries to be zero
         phi[0, :, :] = 0  # x-axis top face
@@ -56,15 +127,33 @@ class Poisson(object):
         return phi
 
     def init_phi(self):
+        """
+        Initialise the potential field with uniform random noise and set the 
+        boundaries to be zero.
+
+        Returns
+        -------
+        np.ndarray of shape (l, l, l)
+            Randomly initialised potential field with zero boundaries.
+
+        """
 
         # Initialise lattice to have some random noise between 0 and 1
         phi = np.random.rand(self.l, self.l, self.l)
-        #phi = np.zeros(shape = (self.l, self.l, self.l))
 
         # Assign to self.phi and set boundaries to be zero
         return self.boundary_conditions(phi)
 
     def init_rho_monopole(self):
+        """
+        Initialise the charge density as a point monopole at the lattice centre.
+
+        Returns
+        -------
+        np.ndarray of shape (l, l, l)
+            Charge density array with a single non-zero entry at the centre.
+
+        """
 
         # Initiate rho as a monopole
         rho = np.zeros(shape=(self.l, self.l, self.l))
@@ -73,6 +162,15 @@ class Poisson(object):
         return rho
     
     def init_rho_wire(self):
+        """
+        Initialise the charge density as an infinite wire along the z-axis.
+
+        Returns
+        -------
+        rnp.ndarray of shape (l, l, l)
+            Charge density array with a line of unit values along the z-axis.
+
+        """
         
         # Initiate rho as a monopole
         rho = np.zeros(shape=(self.l, self.l, self.l))
@@ -81,6 +179,15 @@ class Poisson(object):
         return rho
 
     def jacobi(self):
+        """
+        Performs one Jacobi iteration over the entire lattice.
+
+        Returns
+        -------
+        np.ndarray of shape (l, l, l)
+            Absolute change |φ_new − φ_old| at every grid point.
+
+        """
 
         # Calculate new phi, taking into consideration periodic boundaries
         new_phi = (np.roll(self.phi, 1, axis=0) + np.roll(self.phi, -1, axis=0) +
@@ -100,6 +207,15 @@ class Poisson(object):
         return distance
 
     def gauss_seidel(self):
+        """
+        Perform one Gauss-Seidel sweep over the entire lattice.
+
+        Returns
+        -------
+        np.ndarray of shape (l, l, l)
+            Absolute change |φ_new − φ_old| at every grid point.
+
+        """
 
         # First, save old phi
         old_phi = self.phi.copy()
@@ -122,6 +238,15 @@ class Poisson(object):
         return distance
 
     def sor(self):
+        """
+        Perform one Successive Over-Relaxation (SOR) sweep.
+
+        Returns
+        -------
+        np.ndarray of shape (l, l, l)
+            Absolute change |φ_new − φ_old| at every grid point.
+
+        """
 
         # First, save old phi
         old_phi = self.phi.copy()
@@ -146,6 +271,19 @@ class Poisson(object):
         return distance
 
     def get_electric_field(self):
+        """
+        Compute the electric field from the converged potential.
+
+        Returns
+        -------
+        E_x : np.ndarray of shape (l, l, l)
+            x-cartesian component of the electric field.
+        E_y : np.ndarray of shape (l, l, l)
+            y-cartesian component of the electric field.
+        E_z : np.ndarray of shape (l, l, l)
+            z-cartesian component of the electric field.
+
+        """
         
         E_x = -(np.roll(self.phi, -1, axis=0) - np.roll(self.phi, 1, axis=0)) / 2
         E_y = -(np.roll(self.phi, -1, axis=1) - np.roll(self.phi, 1, axis=1)) / 2
@@ -154,6 +292,19 @@ class Poisson(object):
         return E_x, E_y, E_z
     
     def get_magnetic_field(self):
+        """
+        Compute the magnetic field from the converged vector potential.
+
+        Returns
+        -------
+        B_x : np.ndarray of shape (l, l, l)
+            x-cartesian component of the magnetic field.
+        B_y : np.ndarray of shape (l, l, l)
+            y-cartesian component of the magnetic field.
+        B_z : np.ndarray of shape (l, l, l)
+            z-cartesian component of the magnetic field.
+
+        """
         
         grad_x = (np.roll(self.phi, -1, axis=0) - np.roll(self.phi, 1, axis=0)) / 2
         grad_y = (np.roll(self.phi, -1, axis=1) - np.roll(self.phi, 1, axis=1)) / 2
@@ -164,8 +315,29 @@ class Poisson(object):
 
 
 class Simulation(object):
+    """
+    A class to handle the execution, measurement, and visualisation 
+    of the Poisson simulation.
+    """
     
     def __init__(self, l, tolerance, omega):
+        """
+        Initialise the simulation parameters.
+
+        Parameters
+        ----------
+        l : int
+            Side length of the cubic lattice (l × l × l grid points).
+        tolerance : float
+            Convergence threshold.
+        omega : float
+            SOR relaxation parameter.
+
+        Returns
+        -------
+        None.
+
+        """
 
         # Define parameters
         self.l = l
@@ -173,6 +345,21 @@ class Simulation(object):
         self.tolerance = tolerance
 
     def electric_measurements(self, alg, filename):
+        """
+        Solve the Poisson equation for a monopole and save the midplane field data.
+
+        Parameters
+        ----------
+        alg : {"j", "gs", "sor"}
+            Iterative algorithm to use: Jacobi, Gauss-Seidel, or SOR.
+        filename : str
+            Output data filename (written under ``outputs/datafiles/``).
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -225,7 +412,6 @@ class Simulation(object):
         E_y_midplane = E_y[:, :, self.l // 2]
         E_z_midplane = E_z[:, :, self.l // 2]
         E_midplane = E[:, :, self.l // 2]
-        #E_midplane = np.sqrt(E_x_midplane**2 + E_y_midplane**2 + E_z_midplane**2)
         
         # Open in "a" (append) or "w" (overwrite) mode
         # Write the values into the file
@@ -233,21 +419,41 @@ class Simulation(object):
             
             f.write("x,y,r,E_x,E_y,E_z,E,phi\n")
 
+            # Iterate through x and y coordiantes
             for x in range(self.l):
                 for y in range(self.l):
                     
+                    # Calculate the distance from the central charge
                     r = np.sqrt((x - self.l // 2)**2 + (y - self.l // 2)**2)
                     
+                    # Obtain the electric field value
                     E_x_val = E_x_midplane[x,y]
                     E_y_val = E_y_midplane[x,y]
                     E_z_val = E_z_midplane[x,y]
                     
+                    # Obtain the potential and total electric field magnitude
                     phi_val = phi_midplane[x, y]
                     E_val = E_midplane[x, y]
-                        
+                       
+                    # Write to the file
                     f.write(f"{x},{y},{r},{E_x_val},{E_y_val},{E_z_val},{E_val},{phi_val}\n")
                     
     def magnetic_measurements(self, alg, filename):
+        """
+        Solve the Poisson equation for a wire and save midplane field data.
+
+        Parameters
+        ----------
+        alg : {"j", "gs", "sor"}
+            Iterative algorithm to use: Jacobi, Gauss-Seidel, or SOR.
+        filename : str
+            Output data filename (written under ``outputs/datafiles/``).
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -307,25 +513,64 @@ class Simulation(object):
             
             f.write("x,y,r,M_x,M_y,M_z,M,phi\n")
 
+            # Iterate through x and y coordiantes
             for x in range(self.l):
                 for y in range(self.l):
                     
+                    # Calculate the distance from the wire
                     r = np.sqrt((x - self.l // 2)**2 + (y - self.l // 2)**2)
                     
+                    # Obtain the magnetic field values
                     M_x_val = M_x_midplane[x,y]
                     M_y_val = M_y_midplane[x,y]
                     M_z_val = M_z_midplane[x,y]
                     
+                    # Obtain the potential and total magnetic field magnitude
                     phi_val = phi_midplane[x, y]
                     M_val = M_midplane[x, y]
                         
+                    # Write to the files
                     f.write(f"{x},{y},{r},{M_x_val},{M_y_val},{M_z_val},{M_val},{phi_val}\n")
                     
     def f(self, x, A, B):
+        """
+        Linear model used for curve fitting.
+
+        Parameters
+        ----------
+        x : array-like
+            Independent variable.
+        A : float
+            Slope.
+        B : float
+            Intercept.
+ 
+        Returns
+        -------
+        np.ndarray
+            Evaluated model values "A * x + B".
+
+        """
         
         return A * x + B
                     
     def plot_field_vs_distance_measurements(self, filename, field_type):
+        """
+        Generate and save a plot of the field magnitude vs radial distance on 
+        a log-log scale with a power-law fit.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the data file under ``outputs/datafiles/``.
+        field_type : {"Electric", "Magnetic"}
+            Used to label plot axes and titles.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -381,7 +626,12 @@ class Simulation(object):
         ax.legend(loc="upper right")
         
         # Set titles
-        ax.set_title(rf"{field_type} Field of the z-axis midplane vs Distance", fontsize = 16)
+        ax.set_title(
+    rf"{field_type} Field of the z-axis midplane vs Distance"
+    "\n"
+    rf"{self.l} x {self.l} lattice with {self.tolerance} accuracy", 
+    fontsize=16
+)
         ax.set_xlabel("ln(Distance)", fontsize = 14)
         ax.set_ylabel(rf"ln($|{field_type} field|$)", fontsize = 14)
         
@@ -397,6 +647,21 @@ class Simulation(object):
         plt.show()
         
     def plot_potential_vs_distance_measurements(self, filename, field_type):
+        """
+        Generate and save a plot of the field potential vs radial distance.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the data file under ``outputs/datafiles/``.
+        field_type : {"Electric", "Magnetic"}
+            Selects the axis labels, plot style, and fit transformation.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -454,7 +719,12 @@ class Simulation(object):
             ax.legend(loc="upper right")
             
             # Set titles
-            ax.set_title(rf"{field_type} Potential of the z-axis midplane vs Distance", fontsize = 16)
+            ax.set_title(
+    rf"{field_type} Potential of the z-axis midplane vs Distance"
+    "\n" 
+    rf"{self.l} x {self.l} lattice with {self.tolerance} accuracy", 
+    fontsize=16
+)
             ax.set_xlabel("ln(r)", fontsize = 14)
             ax.set_ylabel(r"ln($\phi$)", fontsize = 14)
             
@@ -471,7 +741,12 @@ class Simulation(object):
             ax.legend(loc="upper right")
             
             # Set titles
-            ax.set_title(rf"{field_type} Potential of the z-axis midplane vs Distance", fontsize = 16)
+            ax.set_title(
+    rf"{field_type} Potential of the z-axis midplane vs Distance"
+    "\n" 
+    rf"{self.l} x {self.l} lattice with {self.tolerance} accuracy", 
+    fontsize=16
+)
             ax.set_xlabel("ln(r)", fontsize = 14)
             ax.set_ylabel(r"$A_z$", fontsize = 14)
         
@@ -487,6 +762,22 @@ class Simulation(object):
         plt.show()
         
     def plot_potential_measurements(self, filename, field_type):
+        """
+        Generate and save a contour map and a heatmap of the potential on the
+        z-axis midplane.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the data file under ``outputs/datafiles/``.
+        field_type : {"Electric", "Magnetic"}
+            Used to label plot titles.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -529,7 +820,12 @@ class Simulation(object):
         # Plot the data
         plot = plt.contour(phi[:, :, self.l // 2].T, levels = 10)
         plt.colorbar(plot, shrink = 0.65)
-        ax.set_title(rf"{field_type} Potential of the z-axis midplane", fontsize = 16)
+        ax.set_title(
+    rf"{field_type} Potential of the z-axis midplane"
+    "\n"
+    rf"{self.l} x {self.l} lattice with {self.tolerance} accuracy", 
+    fontsize=16
+)
         ax.set_xlabel("x", fontsize = 14)
         ax.set_ylabel("y", fontsize = 14)
         
@@ -544,7 +840,12 @@ class Simulation(object):
         # Plot the contour
         plot = plt.imshow(phi[:, :, self.l // 2].T, origin = "lower")
         plt.colorbar(plot, shrink = 0.65)
-        ax.set_title(rf"{field_type} Potential of the z-axis midplane", fontsize = 16)
+        ax.set_title(
+    rf"{field_type} Potential of the z-axis midplane"
+    "\n"
+    rf"{self.l} x {self.l} lattice with {self.tolerance} accuracy", 
+    fontsize=16
+)
         ax.set_xlabel("x", fontsize = 14)
         ax.set_ylabel("y", fontsize = 14)
         
@@ -560,6 +861,22 @@ class Simulation(object):
         plt.show()
         
     def plot_field_measurements(self, filename, field_type):
+        """
+        Generate and save a quiver plot of the field vectors on the z-axis
+        midplane.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the data file under ``outputs/datafiles/``.
+        field_type : {"Electric", "Magnetic"}
+            Used to label the plot title.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -617,7 +934,12 @@ class Simulation(object):
         
         # Plot the data
         ax.quiver(X[skip], Y[skip], field_x_norm.T[skip], field_y_norm.T[skip])
-        ax.set_title(rf"{field_type} Field Vectors $E_x, E_y$", fontsize = 16)
+        ax.set_title(
+    rf"{field_type} Field Vectors $E_x, E_y$"
+    "\n"
+    rf"{self.l} x {self.l} lattice with {self.tolerance} accuracy", 
+    fontsize=16
+)
         ax.set_xlabel("x", fontsize = 14)
         ax.set_ylabel("y", fontsize = 14)
         
@@ -633,6 +955,20 @@ class Simulation(object):
         plt.show()
         
     def plot_sors(self, filename):
+        """
+        Generate and plot the number of SOR sweeps to convergence vs the 
+        relaxation parameter ω.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the data file under ``outputs/datafiles/``.
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -681,7 +1017,12 @@ class Simulation(object):
         ax.legend(loc="upper right")
         
         # Set titles
-        ax.set_title(r"Total sweeps vs the relaxation parameter $\omega$", fontsize = 16)
+        ax.set_title(
+    rf"Total sweeps vs the relaxation parameter $\omega$"
+    "\n" 
+    rf"{self.l} x {self.l} lattice with {self.tolerance} accuracy", 
+    fontsize=16
+)
         ax.set_xlabel(r"Relaxation parameter $\omega$", fontsize = 14)
         ax.set_ylabel("Total sweeps", fontsize = 14)
         
@@ -697,7 +1038,20 @@ class Simulation(object):
         plt.show()
         
     def sors_measurements(self, filename):
-        # For the electric field
+        """
+        Measure the total number of sweeps until convergence for different
+        relaxation parameters ω.
+
+        Parameters
+        ----------
+        filename : str
+            Output data filename (written under ``outputs/datafiles/``).
+
+        Returns
+        -------
+        None.
+
+        """
         
         # Define datafiles output directory
         base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -710,8 +1064,8 @@ class Simulation(object):
             os.makedirs(datafiles_folder)
         
         # Make a range of omegas to test
-        #omegas = np.round(np.arange(1, 2, step = 0.01),2)
-        omegas = np.round(np.arange(1.8, 1.9, step = 0.01),2)
+        omegas = np.round(np.arange(1, 2, step = 0.01), 2)
+        #omegas = np.round(np.arange(1.8, 1.9, step = 0.01),2)
         sweeps = []
         
         # Iterate through all omegas
@@ -754,6 +1108,20 @@ class Simulation(object):
                     f.write(f"{omegas[i]},{sweeps[i]}\n")
         
     def sors_measurements_multiprocessing(self, filename):
+        """
+        Measure the total number of sweeps until convergence for different
+        relaxation parameters ω using multiprocessing.
+
+        Parameters
+        ----------
+        filename : str
+            Output data filename (written under ``outputs/datafiles/``).
+
+        Returns
+        -------
+        None.
+
+        """
 
         base_directory = os.path.dirname(os.path.abspath(__file__))
         outputs_directory = os.path.join(base_directory, "outputs")
@@ -764,6 +1132,7 @@ class Simulation(object):
             os.makedirs(datafiles_folder)
     
         omegas = np.round(np.arange(1.0, 2.0, step=0.01), 2)
+        #omegas = np.round(np.arange(1.8, 2.0, step=0.01), 2)
         results = {}
     
         def callback(result):
@@ -806,7 +1175,7 @@ if __name__ == "__main__":
                         help="Animation or measurements")
     parser.add_argument("--steps", type=int, default=100000,
                         help="Number of simulation steps")
-    parser.add_argument("--omega", type=float, default=0.1, help="Omega")
+    parser.add_argument("--omega", type=float, default=1.87, help="Omega")
     parser.add_argument("--tol", type=float, default=1e-6, help="Tolerance")
     parser.add_argument("--type", type=str, default="e", choices=["e", "m", "s"],
                         help="Electricm magnetic, or sors experiment")
@@ -823,7 +1192,7 @@ if __name__ == "__main__":
     if args.type == "e":
 
         filename = f"electric_{args.alg}alg_{args.l}l_{args.tol}tol_1.txt"
-        sim.electric_measurements(args.alg, filename)
+        #sim.electric_measurements(args.alg, filename)
         sim.plot_potential_measurements(filename, field_type = "Electric")
         sim.plot_field_measurements(filename, field_type = "Electric")
         sim.plot_field_vs_distance_measurements(filename, field_type = "Electric")
@@ -832,7 +1201,7 @@ if __name__ == "__main__":
     if args.type == "m":
         
         filename = f"magnetic_{args.alg}alg_{args.l}l_{args.tol}tol_1.txt"
-        sim.magnetic_measurements(args.alg, filename)
+        #sim.magnetic_measurements(args.alg, filename)
         sim.plot_potential_measurements(filename, field_type = "Magnetic")
         sim.plot_field_measurements(filename, field_type = "Magnetic")
         sim.plot_field_vs_distance_measurements(filename, field_type = "Magnetic")
@@ -841,12 +1210,12 @@ if __name__ == "__main__":
     if args.type == "s" and args.mp == "False":
         
         filename = f"sors_experiment_{args.l}l_{args.tol}tol_1.txt"
-        sim.sors_measurements(filename)
+        #sim.sors_measurements(filename)
         sim.plot_sors(filename)
         
     if args.type == "s" and args.mp == "True":
         
         filename = f"sors_experiment_{args.l}l_{args.tol}tol_1.txt"
-        sim.sors_measurements_multiprocessing(filename)
+        #sim.sors_measurements_multiprocessing(filename)
         sim.plot_sors(filename)
       

@@ -324,7 +324,12 @@ class Simulation(object):
         ax1.plot(time, free_energy_density)
         ax1.set_ylabel("Free energy density", fontsize = 14)
         ax1.set_xlabel("Time", fontsize = 14)
-        ax1.set_title(rf"Free energy density vs time with $\phi$ = {self.phi}, dx = {self.dx}, dt = {self.dt}", fontsize = 16)
+        ax1.set_title(
+    rf"Free energy density vs time with $\phi$ = {self.phi}, dx = {self.dx}, dt = {self.dt}"
+    "\n" 
+    rf"for a {self.l} x {self.l} lattice", 
+    fontsize=16
+)
         #ax1.set_suptitle(f"$\phi$ = {self.phi}")
         
         # Fix any overlapping labels, titles or tick marks

@@ -1,0 +1,10 @@
+# Ignore the entire outputs folder
+outputs/
+
+# Ignore Mac system files
+.DS_Store
+**/.DS_Store
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
