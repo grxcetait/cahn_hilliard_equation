@@ -3,24 +3,24 @@
 A 2-D numerical simulation of the **Cahn-Hilliard equation**, modelling 
 phase separation in a binary fluid (e.g. oil and water) on a
 periodic square lattice.
+This script has all the functions and classes to either run an animation or measurements of the simulation. 
+The user needs to put in different arguements and customise the animation or measurement conditions.
+
 
 ## Dependencies
 
 - Python 3.8+
 - NumPy
 - Matplotlib
+- Numba
 
 Install dependencies with:
 
 ```bash
-pip install numpy matplotlib
+pip install numpy matplotlib numba 
 ```
 
-## cahn_hilliard.py
-This script has all the functions and classes to either run an animation or measurements of the simulation. 
-The user needs to put in different arguements and customise the animation or measurement conditions.
-
-### Arguments
+## Arguments
 
 - 'phi', Mean initial composition. Use `0` for a symmetric 50/50 mixture; positive/negative values bias towards one phase., Default = 0
 - 'l', Lattice side length. The simulation grid is `l × l`, Default = 100
@@ -44,7 +44,7 @@ python3 poisson.py --type e --alg j --tol 1e-3 --l 100
 ```
 
 ## Output
-All outputs are saved relative to the scipt's directory:
+All outputs are saved relative to the script's directory:
 
 ```
 outputs/
