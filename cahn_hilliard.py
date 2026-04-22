@@ -10,6 +10,49 @@ import numpy as np
 from matplotlib import pyplot as plt
 import os
 import argparse
+from numba import njit
+
+@njit
+def laplacian_numba(array, n):
+    """
+    Compute discrete Laplacian with periodic boundaries.
+    Avoids np.roll to prevent memory allocation overhead.
+    """
+    output = np.empty_like(array)
+    for i in range(n):
+        for j in range(n):
+            # Explicit periodic boundary indexing
+            up = array[(i - 1) % n, j]
+            down = array[(i + 1) % n, j]
+            left = array[i, (j - 1) % n]
+            right = array[i, (j + 1) % n]
+            output[i, j] = up + down + left + right - 4 * array[i, j]
+    return output
+
+@njit
+def ch_step_numba(phi, n, dx, dt):
+    """
+    Performs one full Cahn-Hilliard time step in compiled code.
+    """
+    # 1. Calculate Chemical Potential: mu = -phi + phi^3 - laplacian(phi) / dx^2
+    lap_phi = laplacian_numba(phi, n)
+    mu = -phi * (1 - phi**2) - lap_phi / dx**2
+    
+    # 2. Update Phi: phi_new = phi + dt * laplacian(mu) / dx^2
+    lap_mu = laplacian_numba(mu, n)
+    phi_new = phi + (dt * lap_mu) / dx**2
+    
+    return phi_new
+
+@njit
+def run_ch_block_numba(phi, n, dx, dt, block_size):
+    """
+    Runs a block of steps entirely in Numba.
+    """
+    current_phi = phi
+    for _ in range(block_size):
+        current_phi = ch_step_numba(current_phi, n, dx, dt)
+    return current_phi
 
 class CahnHilliard(object):
     """
@@ -99,7 +142,7 @@ class CahnHilliard(object):
             
     def calculate_phi(self):
         """
-        Advance the composition field by one time steps.
+        Advance the composition field using optimised Numba logic.
 
         Returns
         -------
@@ -107,9 +150,8 @@ class CahnHilliard(object):
 
         """
         
-        self.calculate_mu()
-        
-        self.phi = self.phi + self.dt * self.laplacian(self.mu) / self.dx**2
+        # We ensure data types are float64 for maximum Numba performance
+        self.phi = ch_step_numba(self.phi.astype(np.float64), self.l, self.dx, self.dt)
         
     def calculate_free_energy_density(self):
         """
@@ -243,20 +285,14 @@ class Simulation(object):
         
         # Iterate through simulation steps
         for s in range(steps):
-            print(f"Simulating step = {s}/{steps}", end = '\r')
+            print(f"\rSimulating step = {s}/{steps}", end='', flush=True)
             
-            # Update the array
-            ch.calculate_phi()
+            # Run 100 steps at once in Numba before returning to Python to measure
+            ch.phi = run_ch_block_numba(ch.phi, ch.l, ch.dx, ch.dt, 100)
             
-            # Take a measurement every 100 steps 
-            if s % 100 == 0:
-            
-                # Measure the free energy density
-                fed = np.mean(ch.calculate_free_energy_density())
-                
-                # Append to the list
-                free_energy_density.append(fed)
-                time.append(s)
+            fed = np.mean(ch.calculate_free_energy_density())
+            free_energy_density.append(fed)
+            time.append(s)
             
         # Open in "a" (append) or "w" (overwrite) mode
         # Write the values into the specified file
@@ -322,8 +358,8 @@ class Simulation(object):
         fig, ax1 = plt.subplots(1, 1, figsize=(8, 10))
         
         ax1.plot(time, free_energy_density)
-        ax1.set_ylabel("Free energy density", fontsize = 14)
-        ax1.set_xlabel("Time", fontsize = 14)
+        ax1.set_ylabel(r"Mean Free Energy Density $\langle f(\phi) \rangle$", fontsize = 14)
+        ax1.set_xlabel(r"Time $t = 100 dt$", fontsize = 14)
         ax1.set_title(
     rf"Free energy density vs time with $\phi$ = {self.phi}, dx = {self.dx}, dt = {self.dt}"
     "\n" 
@@ -356,7 +392,7 @@ if __name__ == "__main__":
     parser.add_argument("--dt", type = float, default = 0.01, help = "Time step")
     parser.add_argument("--mode", type = str, default = "ani", choices = ["ani", "mea"],
                          help = "Animation or measurements")
-    parser.add_argument("--steps", type = int, default = 100000,
+    parser.add_argument("--steps", type = int, default = 20000,
                         help = "Number of simulation steps")
     
     args = parser.parse_args()
@@ -370,7 +406,7 @@ if __name__ == "__main__":
         
     else:
         
-        filename = f"ch_free_energy_density_{args.steps}steps_{args.phi}phi_{args.dx}dx_{args.dt}dt_2.txt"
-        sim.measurements(filename, steps = args.steps)
+        filename = f"ch_free_energy_density_{args.steps}steps_{args.phi}phi_{args.dx}dx_{args.dt}dt_3.txt"
+        #sim.measurements(filename, steps = args.steps)
         sim.plot_measurements(filename)
     
