@@ -27,7 +27,7 @@ pip install numpy matplotlib numba
 - 'dx', Spatial step size, Default = 1.0
 - 'dt', Time step size, Default = 0.01
 - 'mode', Choose between animation 'ani' or measurements 'mea', Default = 'ani'
-- 'steps', Total number of simulation steps, Default = 100000
+- 'steps', Total number of simulation steps, Default = 20000
 
 ## Command line examples
 
