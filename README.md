@@ -26,8 +26,12 @@ pip install numpy matplotlib numba
 - 'l', Lattice side length. The simulation grid is `l × l`, Default = 100
 - 'dx', Spatial step size, Default = 1.0
 - 'dt', Time step size, Default = 0.01
+- 'a', Constant 'a', Default = 1
+- 'k', Constant 'k', Default = 1
+- 'M', Constant 'M', Default = 1
 - 'mode', Choose between animation 'ani' or measurements 'mea', Default = 'ani'
 - 'steps', Total number of simulation steps, Default = 20000
+- 'int', Interval to take measurements, Default = 100
 
 ## Command line examples
 
@@ -38,9 +42,10 @@ python3 cahn_hilliard.py --mode ani --steps 100000 --phi 0
 ```
 
 ### Measurements (`--mode mea`)
+Taking 1000000 with intervals of 100.
 
 ```
-python3 poisson.py --type e --alg j --tol 1e-3 --l 100
+python3 cahn_hilliard.py --mode mea --steps 1000000 --phi 0 --int 100
 ```
 
 ## Output
