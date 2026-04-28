@@ -15,43 +15,117 @@ from numba import njit
 @njit
 def laplacian_numba(array, n):
     """
-    Compute discrete Laplacian with periodic boundaries.
-    Avoids np.roll to prevent memory allocation overhead.
+    Compute the discrete unnormalised Laplacian of a 2D array with periodic 
+    boundary conditions.
+
+    Parameters
+    ----------
+    array : np.ndarray of shape (n x n)
+        Input scalar field.
+    n : int
+        Length of lattice of shape (n x n)
+
+    Returns
+    -------
+    np.ndarray of shape (n x n)
+        Discrete Laplacian (unnormalised by dx²).
     """
+
+    # Make an empty copy of the lattice 
     output = np.empty_like(array)
+    
+    # Iterate through lattice
     for i in range(n):
         for j in range(n):
+            
             # Explicit periodic boundary indexing
             up = array[(i - 1) % n, j]
             down = array[(i + 1) % n, j]
             left = array[i, (j - 1) % n]
             right = array[i, (j + 1) % n]
             output[i, j] = up + down + left + right - 4 * array[i, j]
+            
     return output
 
 @njit
-def ch_step_numba(phi, n, dx, dt):
+def ch_step_numba(phi, n, dx, dt, a, k, M):
     """
     Performs one full Cahn-Hilliard time step in compiled code.
-    """
-    # 1. Calculate Chemical Potential: mu = -phi + phi^3 - laplacian(phi) / dx^2
-    lap_phi = laplacian_numba(phi, n)
-    mu = -phi * (1 - phi**2) - lap_phi / dx**2
     
-    # 2. Update Phi: phi_new = phi + dt * laplacian(mu) / dx^2
+    Parameters
+    ----------
+    phi : np.ndarray of shape (n x n)
+        The composition field
+    n : int
+        Length of lattice of shape (n x n)
+    dx : float
+        Spatial step size.
+    dt : float
+        Time step size.
+    a : float
+        Constant 'a'.
+    k : float
+        Constant 'k'.
+    M : float
+        Constant 'M'.
+
+    Returns
+    -------
+    np.ndarray of shape (n x n)
+        Updated composition field.
+    """
+
+    # Calculate the chemical potenital field 
+    # mu = -a * phi + a * phi^3 - k * laplacian(phi) / dx^2
+    lap_phi = laplacian_numba(phi, n)
+    mu = - a * phi + a * phi**3 - k * lap_phi / dx**2
+    
+    # Update phi by one time step
+    # phi_new = phi + M * dt * laplacian(mu) / dx^2
     lap_mu = laplacian_numba(mu, n)
-    phi_new = phi + (dt * lap_mu) / dx**2
+    phi_new = phi + (M * dt * lap_mu) / dx**2
     
     return phi_new
 
 @njit
-def run_ch_block_numba(phi, n, dx, dt, block_size):
+def run_ch_block_numba(phi, n, dx, dt, a, k, M, block_size):
     """
     Runs a block of steps entirely in Numba.
+    
+    Parameters
+    ----------
+    phi : np.ndarray of shape (n x n)
+        The composition field
+    n : int
+        Length of lattice of shape (n x n)
+    dx : float
+        Spatial step size.
+    dt : float
+        Time step size.
+    a : float
+        Constant 'a'.
+    k : float
+        Constant 'k'.
+    M : float
+        Constant 'M'.
+    block_size : int
+        Number of simulation steps.
+
+    Returns
+    -------
+    np.ndarray of shape (n x n)
+        Updated composition field.
     """
+    
+    # Save current phi
     current_phi = phi
+    
+    # Iterate through a block of steps
     for _ in range(block_size):
-        current_phi = ch_step_numba(current_phi, n, dx, dt)
+        
+        # Run one full time step update
+        current_phi = ch_step_numba(current_phi, n, dx, dt, a, k, M)
+        
     return current_phi
 
 class CahnHilliard(object):
@@ -60,7 +134,7 @@ class CahnHilliard(object):
     a physical system (eg. oil-water mixtures).
     """
 
-    def __init__(self, phi, l, dx, dt):
+    def __init__(self, phi, l, dx, dt, a, k, M):
         """
         Initialise the Cahn-Hilliard system
 
@@ -75,6 +149,12 @@ class CahnHilliard(object):
             Spatial step size.
         dt : float
             Time step size.
+        a : float
+            Constant 'a'.
+        k : float
+            Constant 'k'.
+        M : float
+            Constant 'M'.
 
         Returns
         -------
@@ -88,8 +168,9 @@ class CahnHilliard(object):
         self.dt = dt
         self.phi_value = phi
         self.phi = self.init_phi()
-        self.mu = np.zeros((self.l, self.l))
-        self.calculate_mu()
+        self.a = a
+        self.k = k
+        self.M = M
         
     def init_phi(self):
         """
@@ -104,45 +185,12 @@ class CahnHilliard(object):
 
         """
         
-        return np.random.uniform(self.phi_value - 0.1, self.phi_value + 0.1, size = (self.l, self.l))
-        
-    def laplacian(self, array):
-        """
-        Compute the discrete unnormalised Laplacian of a 2D array with periodic 
-        boundary conditions.
-
-        Parameters
-        ----------
-        array : np.ndarray of shape (l, l)
-            Input scalar field.
- 
-        Returns
-        -------
-        np.ndarray of shape (l, l)
-            Discrete Laplacian (unnormalised by dx²).
-
-        """
-        
-        laplacian = np.roll(array, 1, axis = 0) + np.roll(array, 1, axis = 1) + \
-            np.roll(array, -1, axis = 0) + np.roll(array, -1, axis = 1) - 4 * array
-            
-        return laplacian
-        
-    def calculate_mu(self):
-        """
-        Compute the chemical potential field from the current composition.
-
-        Returns
-        -------
-        None.
-
-        """
-        
-        self.mu = - self.phi * (1 - self.phi**2) - self.laplacian(self.phi) / self.dx**2
+        return np.random.uniform(self.phi_value - 0.1, self.phi_value + 0.1, 
+                                 size = (self.l, self.l)).astype(np.float64)
             
     def calculate_phi(self):
         """
-        Advance the composition field using optimised Numba logic.
+        Advance the composition field using Numba.
 
         Returns
         -------
@@ -150,8 +198,7 @@ class CahnHilliard(object):
 
         """
         
-        # We ensure data types are float64 for maximum Numba performance
-        self.phi = ch_step_numba(self.phi.astype(np.float64), self.l, self.dx, self.dt)
+        self.phi = ch_step_numba(self.phi, self.l, self.dx, self.dt, self.a, self.k, self.M)
         
     def calculate_free_energy_density(self):
         """
@@ -168,7 +215,7 @@ class CahnHilliard(object):
         grad_y = (np.roll(self.phi, -1, axis=1) - np.roll(self.phi, 1, axis=1)) / (2 * self.dx)
         grad_sq = grad_x**2 + grad_y**2
    
-        return - self.phi**2 / 2 + self.phi**4 / 4 + grad_sq / 2
+        return - self.a * self.phi**2 / 2 + self.a * self.phi**4 / 4 + self.k * grad_sq / 2
         
     
 class Simulation(object):
@@ -177,7 +224,7 @@ class Simulation(object):
     of the Cahn-Hilliard simulation.
     """
     
-    def __init__(self, phi, l, dx, dt):
+    def __init__(self, phi, l, dx, dt, a, k, M, steps, mea_int):
         """
         Initialise simulation parameters
 
@@ -191,6 +238,16 @@ class Simulation(object):
             Spatial step size.
         dt : float
             Time step size.
+        a : float
+            Constant 'a'.
+        k : float
+            Constant 'k'.
+        M : float
+            Constant 'M'.
+        steps : int
+            Number of measurement steps or animation frames.
+        mea_int : int
+            Interval to take measurements.
 
         Returns
         -------
@@ -203,8 +260,13 @@ class Simulation(object):
         self.dx = dx
         self.dt = dt
         self.phi = phi
+        self.a = a
+        self.k = k
+        self.M = M
+        self.steps = steps
+        self.mea_int = mea_int
         
-    def animate(self, steps):
+    def animate(self):
         """
         Run and display an animation of the Cahn-Hilliard simulation.
 
@@ -220,7 +282,7 @@ class Simulation(object):
         """
         
         # Initialise the lattice using the CahnHilliard class
-        ch = CahnHilliard(self.phi, self.l, self.dx, self.dt)
+        ch = CahnHilliard(self.phi, self.l, self.dx, self.dt, self.a, self.k, self.M)
         
         # Define the figure and axes for the animaΩtion
         fig, ax = plt.subplots()
@@ -231,7 +293,7 @@ class Simulation(object):
         plt.colorbar(im)
         
         # Run the animation for the total number of steps
-        for s in range(steps):
+        for s in range(self.steps):
             
             # Update the array
             ch.calculate_phi()
@@ -249,7 +311,7 @@ class Simulation(object):
         # Keep the final image open when the loop finishes
         plt.show()
         
-    def measurements(self, filename, steps):
+    def measurements(self, filename):
         """
         Run the simulation and record the mean free energy density over time.
 
@@ -281,18 +343,21 @@ class Simulation(object):
         time = []
         
         # Initialise the lattice using the CahnHilliard class
-        ch = CahnHilliard(self.phi, self.l, self.dx, self.dt)
+        ch = CahnHilliard(self.phi, self.l, self.dx, self.dt, self.a, self.k, self.M)
         
         # Iterate through simulation steps
-        for s in range(steps):
-            print(f"\rSimulating step = {s}/{steps}", end='', flush=True)
+        for s in range(self.steps // self.mea_int):
+            step = s * self.mea_int
+            print(f"\rSimulating step = {step}/{self.steps}", end='', flush=True)
             
-            # Run 100 steps at once in Numba before returning to Python to measure
-            ch.phi = run_ch_block_numba(ch.phi, ch.l, ch.dx, ch.dt, 100)
+            # Run mea_init steps at once in Numba before returning to Python to measure
+            ch.phi = run_ch_block_numba(ch.phi, ch.l, ch.dx, ch.dt, ch.a, ch.k, ch.M, self.mea_int)
             
             fed = np.mean(ch.calculate_free_energy_density())
             free_energy_density.append(fed)
-            time.append(s)
+            time.append(step)
+            
+        print()
             
         # Open in "a" (append) or "w" (overwrite) mode
         # Write the values into the specified file
@@ -359,7 +424,7 @@ class Simulation(object):
         
         ax1.plot(time, free_energy_density)
         ax1.set_ylabel(r"Mean Free Energy Density $\langle f(\phi) \rangle$", fontsize = 14)
-        ax1.set_xlabel(r"Time $t = 100 dt$", fontsize = 14)
+        ax1.set_xlabel(r"Time $t = dt$", fontsize = 14)
         ax1.set_title(
     rf"Free energy density vs time with $\phi$ = {self.phi}, dx = {self.dx}, dt = {self.dt}"
     "\n" 
@@ -390,23 +455,30 @@ if __name__ == "__main__":
     parser.add_argument("--l", type = int, default = 100, help = "Lattice size (l x l)")
     parser.add_argument("--dx", type = float, default = 1, help = "Spatial step")
     parser.add_argument("--dt", type = float, default = 0.01, help = "Time step")
+    parser.add_argument("--a", type = float, default = 1, help = "Constant 'a'")
+    parser.add_argument("--k", type = float, default = 1, help = "Constant 'k'")
+    parser.add_argument("--M", type = float, default = 1, help = "Constant 'M'")
     parser.add_argument("--mode", type = str, default = "ani", choices = ["ani", "mea"],
                          help = "Animation or measurements")
     parser.add_argument("--steps", type = int, default = 20000,
-                        help = "Number of simulation steps")
+                        help = "Number of measurement steps or animation frames.")
+    parser.add_argument("--int", type = int, default = 100,
+                        help = "Interval to take measurements.")
     
     args = parser.parse_args()
     
     # Pass in parameters to the Simulation class
-    sim = Simulation(phi = args.phi, l = args.l, dx = args.dx, dt = args.dt)
+    sim = Simulation(phi = args.phi, l = args.l, dx = args.dx, dt = args.dt, 
+                     a = args.a, k = args.k, M = args.M, steps = args.steps,
+                     mea_int = args.int)
         
     if args.mode == "ani":
     
-        sim.animate(steps = args.steps)
+        sim.animate()
         
     else:
         
-        filename = f"ch_free_energy_density_{args.steps}steps_{args.phi}phi_{args.dx}dx_{args.dt}dt_3.txt"
-        #sim.measurements(filename, steps = args.steps)
+        filename = f"ch_free_energy_density_{args.steps}steps_{args.phi}phi_{args.dx}dx_{args.dt}dt.txt"
+        sim.measurements(filename)
         sim.plot_measurements(filename)
     
